@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -pedantic -DNDEBUG
+CFLAGS=-Wall -pedantic -DNDEBUG -lm
 SOURCES=main.c
 OBJECTS=$(SOURCES)
 EXECUTABLE=main
