@@ -1,6 +1,5 @@
-CC=gcc
-CFLAGS=-Wall -pedantic -DNDEBUG -lm
-SOURCES=main.c
+CC=nvcc
+SOURCES=cuda01.cu
 OBJECTS=$(SOURCES)
 EXECUTABLE=main
 
