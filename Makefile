@@ -1,18 +1,18 @@
 CC=nvcc
-SOURCES=cuda01.cu
+SOURCES=mmul.cu
 OBJECTS=$(SOURCES)
-EXECUTABLE=main
+EXECUTABLE=mmul
 
 all: $(SOURCES) $(EXECUTABLE)
 
 $(EXECUTABLE): $(OBJECTS) 
 	$(CC) $(CFLAGS) $(OBJECTS) -o $@
 
-main.o: main.c
+mmul.o: mmul.cu
 	$(CC) $(CFLAGS) $@
 
 run:	all
 	./$(EXECUTABLE)
 
 clean: 
-	rm -rf *.o main
+	rm -rf *.o mmul
