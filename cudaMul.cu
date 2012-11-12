@@ -9,6 +9,7 @@ Jakub Ciechowski GPU 2012
 #include <stdlib.h>
 #include <math.h>
 #include <cuda_runtime.h>
+#include "timers.h"
 
 int TILE_WIDTH = 5;
 
@@ -26,17 +27,6 @@ __global__ void tilingMul(int *M, int *N, int *P, int width, int TILE_WIDTH) {
   
 }
 
-__global__ void naiveMul(int* M, int* N, int* P, int width) {
-
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-    int sum = 0;
-    for(int k=0; k < width; k++) 
-        sum += M[ty*width+k] * N[k*width+tx];
-
-    P[ty*width+tx] = sum;
-}
 void printMat(int *a, int width) {
     int i,j;
     for(i=0;i<width;i++) 
@@ -56,31 +46,32 @@ int* genMatrix(int width) {
 }
 
 int *matMul(int *hostA, int *hostB, int width) {
-    int SIZE = width*width;
-    int *hostC = (int*)calloc(SIZE,sizeof(int));
+    int *hostC = (int*)malloc(width*width*sizeof(int));
 
     int *devA, *devB, *devC;
-    cudaMalloc((void**) &devA, SIZE*sizeof(int));
-    cudaMalloc((void**) &devB, SIZE*sizeof(int));
-    cudaMalloc((void**) &devC, SIZE*sizeof(int));
+    cudaMalloc((void**) &devA, width*width*sizeof(int));
+    cudaMalloc((void**) &devB, width*width*sizeof(int));
+    cudaMalloc((void**) &devC, width*width*sizeof(int));
     
-    // do 256 elementow, naiveMul
-//    dim3 blockDim(width, width);
-//    dim3 gridDim(1,1);
-
-    // powyzej 256
     TILE_WIDTH = sqrt(width);
     dim3 blockDim(width/TILE_WIDTH, width/TILE_WIDTH);
     dim3 gridDim(TILE_WIDTH, TILE_WIDTH);
-    cudaMemcpy(devA, hostA, SIZE*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(devB, hostB, SIZE*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(devC, hostC, SIZE*sizeof(int), cudaMemcpyHostToDevice);
-    // do 256 elementow
-//    naiveMul<<<gridDim,blockDim>>>(devA, devB, devC, width);
-    // powyzej 256
+    cudaMemcpy(devA, hostA, width*width*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(devB, hostB, width*width*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(devC, hostC, width*width*sizeof(int), cudaMemcpyHostToDevice);
+    pTimer zegar = newTimer();
+    printf("n = %d\n",width);
+    startTimer(zegar);
     tilingMul<<<gridDim, blockDim>>> (devA, devB, devC, width, TILE_WIDTH);
-    cudaMemcpy(hostC, devC, SIZE*sizeof(int), cudaMemcpyDeviceToHost);
-
+    cudaMemcpy(hostC, devC, width*width*sizeof(int), cudaMemcpyDeviceToHost);
+    stopTimer(zegar);
+    printTimer(zegar);
+    printf("\n");
+    
+    cudaFree(devA);
+    cudaFree(devB);
+    cudaFree(devC);
+    freeTimer(zegar);
     return hostC;
 }
 
@@ -89,17 +80,25 @@ int main(int argc, char** argv) {
     int *A;
     int *B;
     int *C;
-    if(argc > 2) {
+    if(argc > 1) {
         m = atoi(argv[1]);
     }
 
     A = genMatrix(m);
+/*
     printMat(A,m);
+*/
     B = genMatrix(m);
+/*
     printMat(B,m);
-    
-    C = matMul(A,B,m);
+*/
+    for(int i = 1; i < 50; i++) {
+      printf("n: %d\n",i*m);
+    //  C = matMul(A,B,m*i);
+    }
+/*
     printMat(C,m);
-
+*/
+    
     return 0;
 }
