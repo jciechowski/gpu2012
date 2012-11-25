@@ -1,102 +1,119 @@
 /*
-  Mnozenie macierzy CUDA,
-  Jakub Ciechowski GPU 2012
+Mnozenie macierzy CUDA,
+Jakub Ciechowski GPU 2012
 
 */
 
 #include <cuda.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include <cuda_runtime.h>
-#include "timers.h"
 
-int TILE_WIDTH = 5;
+#define TILE_WIDTH 2
 
-__global__ void tilingMul(int *M, int *N, int *P, int width, int TILE_WIDTH) {
-  
-  int row = blockIdx.y * TILE_WIDTH + threadIdx.y;
-  int col = blockIdx.x * TILE_WIDTH + threadIdx.x;
-  
+__global__ void sharedMul(int *M, int *N, int *P, int width) {
+
+  __shared__ int Ms[TILE_WIDTH][TILE_WIDTH];
+  __shared__ int Ns[TILE_WIDTH][TILE_WIDTH];
+
+  int bx = blockIdx.x;
+  int by = blockIdx.y;
+  int tx = threadIdx.x;
+  int ty = threadIdx.y;
+
+  int row = by * TILE_WIDTH + ty;
+  int col = bx * TILE_WIDTH + tx;
+
   int sum = 0;
-  
-  for(int k = 0; k < width; k++)
-    sum += M[row*width+k] * N[k*width+col];
-  
-  P[row*width+col] = sum;
-  
+
+  for(int m = 0; m < width/TILE_WIDTH; m++) {
+    Ms[ty][tx] = M[row*width + (m*TILE_WIDTH + tx)];
+    Ns[ty][tx] = N[(m*TILE_WIDTH + ty)*width + col];
+
+    __syncthreads();
+
+    for(int k = 0; k < TILE_WIDTH; k++) {
+      sum += Ms[m+ty][k] * Ns[k][m+tx]; 
+    }
+    __syncthreads();
+  }
+  P[row*width+col] = sum; 
 }
+
+
+// __global__ void naiveMul(int* M, int* N, int* P, int width) {
+
+//   // TODO 
+//   // mnozenie macierzy powyzej 512 elementow
+//     int tx = threadIdx.x;
+//     int ty = threadIdx.y;
+
+//     int sum = 0;
+//         sum += M[ty*width+k] * N[k*width+tx];
+
+//     P[ty*width+tx] = sum;
+// }
 
 void printMat(int *a, int width) {
-  int i,j;
-  for(i=0;i<width;i++) 
-    for(j=0;j<width;j++)
-      printf("%d%c",a[i*width+j],(j == (width-1))?'\n':'\t');
+    int i,j;
+    for(i=0;i<width;i++) 
+        for(j=0;j<width;j++)
+            printf("%d%c",a[i*width+j],(j == (width-1))?'\n':'\t');
 
-  printf("\n");
+    printf("\n");
 }
+
 
 int* genMatrix(int width) {
-  int *a = (int*)calloc(width*width, sizeof(int));
-  int i,j;
-  for(i=0;i<width;i++)
-    for(j=0;j<width;j++)
-      a[i*width+j] = rand()%10;
-  return a;
+    int *a = (int*)calloc(width*width, sizeof(int));
+    int i,j;
+    for(i=0;i<width;i++)
+        for(j=0;j<width;j++)
+            a[i*width+j] = rand()%10;
+    return a;
 }
 
-int *matMul(int *hostA, int *hostB, int width) {
-  int *hostC = (int*)malloc(width*width*sizeof(int));
 
-  int *devA, *devB, *devC;
-  cudaMalloc((void**) &devA, width*width*sizeof(int));
-  cudaMalloc((void**) &devB, width*width*sizeof(int));
-  cudaMalloc((void**) &devC, width*width*sizeof(int));
-    
-  TILE_WIDTH = sqrt(width);
-  dim3 blockDim(width/TILE_WIDTH, width/TILE_WIDTH);
-  dim3 gridDim(TILE_WIDTH, TILE_WIDTH);
-  cudaMemcpy(devA, hostA, width*width*sizeof(int), cudaMemcpyHostToDevice);
-  cudaMemcpy(devB, hostB, width*width*sizeof(int), cudaMemcpyHostToDevice);
-  cudaMemcpy(devC, hostC, width*width*sizeof(int), cudaMemcpyHostToDevice);
-  pTimer zegar = newTimer();
-  printf("n = %d\n",width);
-  startTimer(zegar);
-  tilingMul<<<gridDim, blockDim>>> (devA, devB, devC, width, TILE_WIDTH);
-  cudaMemcpy(hostC, devC, width*width*sizeof(int), cudaMemcpyDeviceToHost);
-  stopTimer(zegar);
-  printTimer(zegar);
-  printf("\n");
-    
-  cudaFree(devA);
-  cudaFree(devB);
-  cudaFree(devC);
-  freeTimer(zegar);
-  return hostC;
+int *matMul(int *hostA, int *hostB, int width) {
+    int SIZE = width*width;
+    int *hostC = (int*)calloc(SIZE,sizeof(int));
+
+    int *devA, *devB, *devC;
+    cudaMalloc((void**) &devA, SIZE*sizeof(int));
+    cudaMalloc((void**) &devB, SIZE*sizeof(int));
+    cudaMalloc((void**) &devC, SIZE*sizeof(int));
+
+       dim3 gridDim(width/TILE_WIDTH, width/TILE_WIDTH);
+       dim3 blockDim(TILE_WIDTH,TILE_WIDTH);
+    // dim3 blockDim(width,width);
+    // dim3 gridDim(1,1);
+
+    cudaMemcpy(devA, hostA, SIZE*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(devB, hostB, SIZE*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(devC, hostC, SIZE*sizeof(int), cudaMemcpyHostToDevice);
+       sharedMul<<<gridDim,blockDim>>>(devA, devB, devC, width);
+    //    naiveMul<<<gridDim,blockDim>>>(devA, devB, devC, width);
+    cudaMemcpy(hostC, devC, SIZE*sizeof(int), cudaMemcpyDeviceToHost);
+
+    return hostC;
 }
 
 int main(int argc, char** argv) {
-  int m = 4;
-  int *A;
-  int *B;
-  int *C;
-  if(argc > 1) {
-    m = atoi(argv[1]);
-  }
+    int m = 4;
+    int *A;
+    int *B;
+    int *C;
+    if(argc > 1) {
+        m = atoi(argv[1]);
+    }
 
-  A = genMatrix(m);
-  /*
+    A = genMatrix(m);
     printMat(A,m);
-  */
-  B = genMatrix(m);
-  /*
+    B = genMatrix(m);
     printMat(B,m);
-  */
-  C = matMul(A,B,m*i);
-
-  /*
-    printMat(C,m);
-  */
     
-  return 0;
+    C = matMul(A,B,m);
+    printf("TILE = %d\n",TILE_WIDTH);
+    printMat(C,m);
+
+    return 0;
 }
